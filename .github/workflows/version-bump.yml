@@ -22,8 +22,15 @@ jobs:
       - name: Determine version bump
         id: bump
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s")
+          # Handle the no-tags case: if no tag has ever been created, look at
+          # the latest commit only (otherwise `git log v0.0.0..HEAD` errors with
+          # "unknown revision" because v0.0.0 isn't a real ref).
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -z "$LAST_TAG" ]; then
+            COMMITS=$(git log -1 --pretty=format:"%s")
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s")
+          fi
 
           if echo "$COMMITS" | grep -qE "^feat!:|BREAKING CHANGE:"; then
             echo "bump=major" >> $GITHUB_OUTPUT
