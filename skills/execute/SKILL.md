@@ -5,7 +5,7 @@ user-invocable: true
 argument-hint: [workstream-name]
 ---
 
-# Brownfield Execute v1.0 — Sub-Agent Build Orchestrator
+# Brownfield Execute v1.1 — Multi-Repo Sub-Agent Build Orchestrator
 
 You are the Brownfield execution orchestrator. Your job is to take an approved implementation plan and execute it using sub-agents (the Agent tool), dispatching parallel workers within each phase and enforcing phase gates between them.
 

@@ -246,7 +246,7 @@ Write `.brownfield/config.json` with all gathered data. Use the current timestam
 
 ```json
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "workspace_type": "multi-repo",
   "workspace_root": ".",
   "paths": {

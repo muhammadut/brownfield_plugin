@@ -1,8 +1,8 @@
 # Brownfield Plugin
 
-**Production-grade brownfield development workflow for Claude Code.** Research, plan, execute, verify, and learn — applied to feature work on existing codebases. Multi-repo support. Adversarial review by Codex CLI (with Claude fallback). Persistent learning across workstreams.
+**Production-grade brownfield development workflow for Claude Code.** Research, plan, execute, verify, and learn — applied to feature work on existing codebases. **Multi-repo branch coordination, per-repo commit tracking, and merge-order recommendations.** Adversarial review by Codex CLI (with Claude fallback). Persistent learning across workstreams.
 
-> **Status:** v1.0.0 — first public release. Production-tested in private form for several months before public launch. Pair with the [`greenfield`](https://github.com/muhammadut/greenfield_plugin) plugin for new-project planning + scaffolding.
+> **Status:** v1.1.0 — multi-repo execute v2 release. Adds automatic branch creation across affected repos, per-repo commit tracking in `state.json`, PR creation commands per repo, and a recommended merge order in verify. Backwards-compatible with v1.0.0 workstreams via state.json fallback. Pair with the [`greenfield`](https://github.com/muhammadut/greenfield_plugin) plugin for new-project planning + scaffolding.
 
 ---
 
@@ -129,7 +129,7 @@ cd brownfield_plugin
 
 ```bash
 /plugin list
-# brownfield should appear with version 1.0.0
+# brownfield should appear with version 1.1.0
 ```
 
 You should now see 10 slash commands prefixed with `/brownfield:` and 6 agents addressable via the Task tool.
@@ -284,12 +284,14 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 **Behavior:**
 1. Find the active approved workstream (or use the optional `<workstream-id>` argument)
 2. Read `plan.md` — the plan is self-contained, so no other context is needed
-3. For each phase in the plan:
-   - Execute each task in order (CREATE/MODIFY operations) — sub-agents `cd` into the right repo for multi-repo workspaces
+3. **Phase 1.5 (v1.1.0): Branch creation up front.** Walk every task in the plan, collect the unique repo set, classify each as `primary` / `connected` / `search-only`. Compute branch names (`feature/<workstream-id>` for primary, `chore/<workstream-id>` for connected). Present the branch plan to the user for confirmation. On approval, create branches in each affected repo from its default branch using `git -C <repo> checkout -B <branch> origin/<default>`. Record in `state.branches[repo]`. Single-repo workstreams get one branch on the same flow.
+4. For each phase in the plan:
+   - Execute each task in order (CREATE/MODIFY operations) — sub-agents use `git -C <repo>` for all git operations and commit on the pre-checked-out branch
    - Run the phase gate (test command) before proceeding
    - If the gate fails, stop and report
-4. Update workstream state to `build-complete` and record `build.first_commit`, `build.last_commit`, `build.repos_touched` in `state.json`
-5. Suggest `/brownfield:verify` next
+5. Update workstream state to `build-complete` and record per-repo commit tracking: `state.branches[repo].{name,role,default_branch}` and `state.build.commits[repo].{first,last,count}` in `state.json`. Repos with `count: 0` are pruned from `repos_touched`.
+6. Print PR creation commands per affected repo (`gh -R <owner>/<repo> pr create --base main --head <branch>`).
+7. Suggest `/brownfield:verify` next.
 
 ### `/brownfield:verify [<workstream-id>]`
 
@@ -298,15 +300,17 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 **Prerequisites:** A workstream with `state.phase == "build-complete"` (or `"verified"` to re-verify).
 
 **Behavior:**
-1. Read `plan.md` and the diff. Verify reads the commit range from `state.build.first_commit`/`last_commit` (NOT by grepping git log for the workstream id — that would always come back empty). For multi-repo workspaces, it iterates over `state.build.repos_touched` and computes a per-repo diff.
+1. Read `plan.md` and the per-repo diffs. Verify reads `state.branches[repo].{name,default_branch}` and `state.build.commits[repo].{first,last,count}` directly from `state.json` (NOT by grepping git log for the workstream id — that would always come back empty). For each entry in `state.build.repos_touched`, compute a labeled diff using `git -C <repo> diff <first>~1..<last>`. The verification prompt sent to Codex/skeptical-reviewer is built per-repo, with each diff in its own labeled section.
 2. Invoke Codex CLI (if `review.tool == "codex"`) to review:
    - Does the implementation match the plan?
    - Are there missing pieces?
    - Are there security issues?
    - Are there regressions in untouched code?
-3. If Codex unavailable, invoke `skeptical-reviewer` agent
-4. Write verification report to `.brownfield/workstreams/<id>/verification.md`
-5. Update workstream state to `verified` (retro is the next step and will archive)
+   - **Cross-repo coherence (multi-repo only):** does the primary repo's new contract match what the connected repos consume?
+3. If Codex unavailable, invoke `skeptical-reviewer` agent.
+4. Write verification report to `.brownfield/workstreams/<id>/verification.md`.
+5. **Phase 4.5 (v1.1.0): Recommended Merge Order.** For multi-repo workstreams (`len(repos_touched) >= 2`), append a section to `verification.md` ranking PRs by dependency direction: Tier 1 = contract exporters merge first, Tier 2 = consumers merge second, Tier 3 = primary repo merges LAST. Includes a "Compatibility Window" explanation. Skipped for single-repo.
+6. Update workstream state to `verified` (retro is the next step and will archive).
 
 ### `/brownfield:research <topic>`
 
@@ -685,6 +689,30 @@ For multi-repo workspaces, the planning skill performs **dynamic dependency disc
 
 This is how Brownfield handles features that span multiple repos without requiring you to manually specify the scope.
 
+### How execute coordinates branches and commits (v1.1.0+)
+
+When you run `/brownfield:execute` on a plan that touches multiple repos, Brownfield creates a coordinated branch set up front — one per affected repo, all sharing the workstream id as a suffix:
+
+- **Primary repo** gets `feature/<workstream-id>` (e.g., `feature/add-oauth2-login-20260413`)
+- Each **connected repo** that has tasks targeting it gets `chore/<workstream-id>`
+- **Search-only** repos (referenced in the plan but with no tasks against them) get no branch
+
+You approve the branch plan once at Phase 1.5, then sub-agents commit into each repo on its own branch using `git -C <repo>` discipline. Per-repo commit ranges are recorded in `state.branches[repo].{name,role,default_branch}` and `state.build.commits[repo].{first,last,count}` inside the workstream's `state.json`. Single-repo workspaces follow the same flow with one entry — there's no second code path to worry about.
+
+On completion, execute prints `gh -R <owner>/<repo> pr create --base <default> --head <branch>` commands for every affected repo. Paste them to open PRs; opening order doesn't matter.
+
+`/brownfield:verify` then reads `state.branches` + `state.build.commits`, runs an adversarial review with one labeled diff section per repo, and appends a **Recommended Merge Order** section to `verification.md` based on dependency direction:
+
+- **Tier 1 (merge first):** repos that EXPORT contracts (shared-models, schemas)
+- **Tier 2 (merge second):** repos that CONSUME the new contracts but aren't user-facing
+- **Tier 3 (merge LAST):** the primary repo — the user-facing entry point
+
+Merging in this order avoids the runtime breakage window where the primary repo's new code paths exist but the connected repos haven't caught up. Rollback is the reverse order. For single-repo workstreams, the merge-order section is skipped (there's only one PR to merge).
+
+#### What if a connected repo isn't on disk?
+
+If your plan references a connected repo that you haven't cloned locally, Phase 1.5 will fail at the `git -C` step. The current behavior is to stop and tell you which repo is missing — clone it (or remove it from the plan if you don't need to touch it) and re-run `/brownfield:execute`. Future versions will detect this earlier and offer to clone or skip.
+
 ---
 
 ## The learning system
@@ -879,18 +907,26 @@ A: Yes. `.brownfield/workstreams/<id>/plan.md` and `state.json` are committable.
 
 ## Roadmap
 
-### v1.1.0
+### Shipped in v1.1.0
+- ✅ **Multi-repo branch coordination** — automatic branch creation across affected repos with `feature/`/`chore/` role-based naming
+- ✅ **Per-repo commit tracking** in `state.json` (`state.branches`, `state.build.commits[repo]`)
+- ✅ **PR creation commands** printed per repo at end of execute
+- ✅ **Recommended merge order** in verify (Tier 1 contracts → Tier 2 consumers → Tier 3 primary)
+- ✅ **Five inherited bugs fixed** — verify reads state.json directly (not git log), retro accepts verified phase, ghost config fields removed, research/plan id format unified, multi-repo execute no longer single-repo only
+
+### v1.2.0 (next)
 - Better fallback when `gh` CLI isn't available — try `glab` (GitLab CLI) and other host CLIs
+- Auto-detect missing connected repos at Phase 1.5 and offer to clone them
 - Workstream archiving and pruning
 - Lessons learned export (markdown export of all lessons across workstreams)
 
-### v1.2.0
+### v1.3.0
 - Configurable expert domain plugins (ship custom domains for industry verticals)
 - IDE integration for browsing workstreams without leaving Claude Code
 - Cross-workstream dependency tracking ("workstream X depends on workstream Y being merged first")
 
 ### v2.0.0
-- Multi-repo PR coordination (atomic deploys across N repos)
+- Atomic cross-repo PR coordination (auto-merge in dependency order once all PRs approve)
 - Optional integration with project management tools via plug-in adapters
 
 ---
