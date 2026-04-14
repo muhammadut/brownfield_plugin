@@ -64,9 +64,73 @@ On **Y**: stash each affected repo independently:
 ```
 On **n**: proceed with warning that conflicts may occur in those repos.
 
-### 1.5 Update State
+### 1.5 Branch Creation (always — single-repo and multi-repo)
 
-Update `state.json` phase to `building`.
+Before any sub-agent runs, create a feature branch in every repo the plan will touch. This is the cross-repo coordination point — once branches exist, every commit lands in a coordinated set that can be reviewed and merged together.
+
+**Step 1 — determine the affected repo set.** Read `.brownfield/workstreams/<id>/plan.md` and walk every task. Collect the unique set of `Repo:` field values across all tasks. Cross-reference with `state.primary_repo` and `state.connected_repos` from the plan phase. Each repo gets a role:
+- **primary** — `state.primary_repo`. The repo whose feature is being built. Branch prefix: `feature/`.
+- **connected** — appears in `state.connected_repos` AND has tasks targeting it in the plan. Branch prefix: `chore/`. These are upstream-driven compatibility updates.
+- **search-only** — appears in `state.connected_repos` but has NO tasks targeting it. No branch needed; agents only read from it.
+
+**Step 2 — compute branch names.** Use the workstream id as the slug:
+- Primary: `feature/<workstream-id>` (e.g., `feature/async-callbacks-20260413`)
+- Connected: `chore/<workstream-id>` (e.g., `chore/async-callbacks-20260413`)
+
+The same `<workstream-id>` suffix appears in every branch across every repo, so a future engineer can find all related branches across all repos with `git for-each-ref refs/heads | grep async-callbacks-20260413`.
+
+**Step 3 — present to the user up front and get confirmation.** Output:
+
+```
+This feature touches 3 repos. I'll create these branches:
+  ./api-service          → feature/async-callbacks-20260413   (primary, 5 tasks)
+  ./shared-models        → chore/async-callbacks-20260413     (contract update, 1 task)
+  ./billing-service      → chore/async-callbacks-20260413     (consumer update, 2 tasks)
+
+Search-only (no branches needed): ./notification-worker
+
+All branches will be created from main (or master, auto-detected per repo).
+Proceed with branch creation? [Y/n]
+```
+
+If the user says **n**, abort and leave state at `plan-approved`. If **Y**:
+
+**Step 4 — create branches.** For each affected repo:
+```bash
+# Auto-detect default branch (main vs master)
+DEFAULT=$(git -C "$REPO" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+DEFAULT="${DEFAULT:-main}"
+git -C "$REPO" fetch origin "$DEFAULT" --quiet
+git -C "$REPO" checkout -B "$BRANCH_NAME" "origin/$DEFAULT"
+```
+
+If a branch with the target name already exists in a repo (from a previous attempt), check it out instead of recreating it — this preserves resume support. Tell the user which branches were created vs reused.
+
+**Step 5 — record branches in state.json.** Update state with both the branch names AND the per-repo build tracking structure that Phase 6.3 and verify will use:
+
+```json
+{
+  "phase": "building",
+  "history": [..., { "phase": "building", "timestamp": "<now>" }],
+  "branches": {
+    "./api-service": { "name": "feature/async-callbacks-20260413", "role": "primary", "default_branch": "main" },
+    "./shared-models": { "name": "chore/async-callbacks-20260413", "role": "connected", "default_branch": "main" },
+    "./billing-service": { "name": "chore/async-callbacks-20260413", "role": "connected", "default_branch": "main" }
+  },
+  "build": {
+    "repos_touched": ["./api-service", "./shared-models", "./billing-service"],
+    "commits": {
+      "./api-service":     { "first": null, "last": null, "count": 0 },
+      "./shared-models":   { "first": null, "last": null, "count": 0 },
+      "./billing-service": { "first": null, "last": null, "count": 0 }
+    }
+  }
+}
+```
+
+`commits.<repo>.first/last/count` will be filled in as sub-agents commit through Phase 4. The `default_branch` field is recorded so verify and the merge-order recommendation (Phase 6) know which base each branch should be compared against.
+
+For **single-repo workspaces**, the same logic applies — there's just one entry. Single-repo workstreams still get a `feature/<workstream-id>` branch instead of committing directly to main. This is the consistent UX.
 
 ## Phase 2: Load Plan
 
@@ -187,20 +251,25 @@ You are implementing Task {N.M} from a Brownfield execution plan.
 ## Your Task
 {paste the task section from plan.md — includes Before/After code, tests, effects}
 
-## Target Repo
+## Working Branch
 **Repo:** {paste the task's "Repo:" field from plan.md — this is the relative path to the git repo this task lives in}
-**Workspace type:** {single-repo|multi-repo}
+**Branch:** {look up state.branches[repo].name — already created and checked out by Phase 1.5}
+**Role:** {state.branches[repo].role — "primary" or "connected"}
+**Workstream id:** {workstream_id}
 
 ## Rules
 1. Implement ONLY what the task specifies. Stay within the clarified scope above — do NOT expand beyond it.
 2. If the task seems to violate the clarified scope (e.g., adds functionality marked "out of scope"), STOP and report FAIL with a scope violation note.
 3. Read files fresh from disk before editing — a teammate may have changed them.
-4. **In a multi-repo workspace, ALL git commands (`git add`, `git commit`, `git status`) must be run from inside the target repo's path.** Either `cd` into the repo first or use `git -C <repo-path> <command>`. File paths in `git add` are relative to the repo, not to the workspace root.
-5. Run the specified tests. All must pass. Test commands also run from inside the repo.
-6. Commit with conventional format: feat|fix|refactor: <desc> (task N.M, ws: {workstream_id})
-   Use a HEREDOC for the commit message. Embedding the workstream id makes verify's diff lookup robust as a fallback.
-7. Stage specific files only — not git add .
-8. Report results in this exact format:
+4. **All git operations must be scoped to the target repo.** Use `git -C {repo-path} <command>` for every git invocation, or `cd` into the repo first. File paths in `git add` are relative to the repo, not to the workspace root.
+5. **The branch is already checked out by Phase 1.5.** Verify with `git -C {repo-path} branch --show-current` — it should print the Working Branch above. Do NOT switch branches. Do NOT commit to main/master.
+6. Run the specified tests from inside the repo. All must pass.
+7. Commit format depends on the role:
+   - **primary repo (role=primary):** `feat|fix|refactor: <desc> (task N.M, ws: {workstream_id})`
+   - **connected repo (role=connected):** `chore(<short-scope>): <desc> (task N.M, ws: {workstream_id})` — the connected repo isn't getting a feature, it's getting an upstream-driven update
+   Use a HEREDOC for the commit message. Embedding the workstream id is the fallback verify uses if state.json gets corrupted.
+8. Stage specific files only — not git add .
+9. Report results in this exact format:
 
 ## Task Result
 - Status: PASS | FAIL
@@ -307,7 +376,7 @@ Validation: PASS | FAIL
 
 ### 6.3 Update State
 
-Update `state.json` phase to `build-complete`. Track the commit range AND the list of repos that received commits — `verify` reads `repos_touched` to compute per-repo diffs:
+Update `state.json` phase to `build-complete`. Per-repo commit tracking is the key to making verify mechanical and the merge-order recommendation possible:
 
 ```json
 {
@@ -318,16 +387,33 @@ Update `state.json` phase to `build-complete`. Track the commit range AND the li
     "tasks_total": "<N>",
     "tasks_skipped": "<N>",
     "tests_passing": "<N>",
-    "first_commit": "<hash>",
-    "last_commit": "<hash>",
-    "repos_touched": ["./api-service", "./web-app"]
+    "repos_touched": ["./api-service", "./shared-models", "./billing-service"],
+    "commits": {
+      "./api-service":     { "first": "abc1234", "last": "def5678", "count": 5 },
+      "./shared-models":   { "first": "ghi9012", "last": "ghi9012", "count": 1 },
+      "./billing-service": { "first": "jkl3456", "last": "mno7890", "count": 2 }
+    }
   }
 }
 ```
 
-**`repos_touched`** is the list of repo paths (matching `index.repos[*].path`) that received at least one commit during this workstream. For a single-repo workspace, this is `["."]`. For multi-repo, it's the deduplicated list of "Repo:" field values from every PASSED task in the plan.
+How to compute these per-repo:
 
-`first_commit` and `last_commit` are the hashes from the **primary repo** (the first one touched). For the multi-repo case, `verify` walks each entry in `repos_touched` and computes a diff per repo using these hashes (each repo has the same workstream commit range because the build runs serialized).
+```bash
+# For each repo in branches map:
+for REPO in <each repo from state.branches>; do
+  BRANCH=$(jq -r ".branches[\"$REPO\"].name" .brownfield/workstreams/<id>/state.json)
+  DEFAULT=$(jq -r ".branches[\"$REPO\"].default_branch" .brownfield/workstreams/<id>/state.json)
+  # First commit on the branch that's not on default
+  FIRST=$(git -C "$REPO" rev-list "origin/$DEFAULT..$BRANCH" --reverse | head -1)
+  LAST=$(git -C "$REPO" rev-parse "$BRANCH")
+  COUNT=$(git -C "$REPO" rev-list "origin/$DEFAULT..$BRANCH" --count)
+done
+```
+
+If a repo in `state.branches` ended up with `count: 0` (zero commits — the plan listed it but no tasks actually modified it), prune it from `repos_touched` and from the `commits` map. The branch was created defensively; if it stayed empty, it shouldn't appear in verify or the merge-order recommendation.
+
+**`repos_touched`** is the deduplicated list of repo paths that received at least one commit during this workstream. For a single-repo workspace, this is one entry (`"."` or the repo's path).
 
 ### 6.4 Present Summary
 
@@ -343,13 +429,24 @@ Update `state.json` phase to `build-complete`. Track the commit range AND the li
 > | Phase 1: {name} | {N}/{N} | complete | PASS |
 > | Phase 2: {name} | {N}/{N} | complete | PASS |
 >
-> **Commits:**
-> {git log --oneline for workstream commits}
+> **Repos and branches:**
+> | Repo | Role | Branch | Commits | First..Last |
+> |------|------|--------|---------|-------------|
+> | ./api-service | primary | feature/{ws-id} | 5 | abc1234..def5678 |
+> | ./shared-models | connected | chore/{ws-id} | 1 | ghi9012..ghi9012 |
+> | ./billing-service | connected | chore/{ws-id} | 2 | jkl3456..mno7890 |
 >
-> Review all changes: `git diff {first-commit}~1..HEAD`
+> **PR creation commands** (paste these when ready to open PRs — order doesn't matter for opening, only for merging):
+> ```bash
+> gh -R <owner>/api-service     pr create --base main --head feature/{ws-id} --title "feat: <feature title>"     --body "Workstream: {ws-id}"
+> gh -R <owner>/shared-models   pr create --base main --head chore/{ws-id}   --title "chore: <change title>"     --body "Companion to api-service#<num>. Workstream: {ws-id}"
+> gh -R <owner>/billing-service pr create --base main --head chore/{ws-id}   --title "chore: <change title>"     --body "Companion to api-service#<num>. Workstream: {ws-id}"
+> ```
+> (Substitute your repo owners. If repos aren't on GitHub, use the equivalent CLI for your host.)
+>
 > Build log: `.brownfield/workstreams/{id}/build-log.md`
 >
-> Next step: `/brownfield:verify` for adversarial code verification."
+> Next step: `/brownfield:verify` for adversarial code verification — it will produce a per-repo diff and a recommended **merge order** based on the dependency direction in the plan."
 
 ## Edge Cases
 

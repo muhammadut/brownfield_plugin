@@ -32,29 +32,35 @@ Update state to `verifying`.
 
 ## Phase 2: Gather Verification Context
 
-Collect everything the verifier needs:
+Collect everything the verifier needs. For multi-repo workstreams this is per-repo; for single-repo it's just one entry.
 
-1. **Plan:** `.brownfield/workstreams/<id>/plan.md` — this is the spec, the single source of truth for what was supposed to be built
-2. **Workstream commit range:** read `state.json` and use the `build.first_commit` and `build.last_commit` fields that `execute` recorded in Phase 6.3. Do NOT try to grep `git log` for the workstream ID — execute does not embed it in commit messages.
-3. **Repos touched:** read `state.build.repos_touched` (a JSON array of repo paths). For single-repo workspaces this is `["."]`. For multi-repo it lists every repo that received a commit during the build.
-4. **Git diff per repo:** for each repo in `repos_touched`, compute the diff between `build.first_commit~1` and `build.last_commit` from inside that repo.
-5. **Test results:** run the test suite (command from `plan.md` Validation Plan section) and capture output.
+1. **Plan:** `.brownfield/workstreams/<id>/plan.md` — the single source of truth for what was supposed to be built.
 
+2. **Branches and commits per repo:** read `state.json`. The relevant fields:
+   - `state.branches` — map of `{repo-path: { name, role, default_branch }}`. Tells you which branch in which repo, and what its base is for the diff.
+   - `state.build.commits` — map of `{repo-path: { first, last, count }}`. The first/last commit hashes per repo. **Do NOT grep git log for the workstream id — execute records these in state.json directly.**
+   - `state.build.repos_touched` — flat array of repo paths that actually received commits. (Repos in `state.branches` with `count: 0` are pruned.)
+
+3. **Git diff per repo:** for each repo in `state.build.repos_touched`:
 ```bash
-# Pseudocode — actual execution should use the Read tool to load state.json
-FIRST_COMMIT=$(jq -r '.build.first_commit' .brownfield/workstreams/<id>/state.json)
-LAST_COMMIT=$(jq -r '.build.last_commit' .brownfield/workstreams/<id>/state.json)
+REPO="<repo-path>"
+DEFAULT=$(jq -r ".branches[\"$REPO\"].default_branch" .brownfield/workstreams/<id>/state.json)
+BRANCH=$(jq -r ".branches[\"$REPO\"].name" .brownfield/workstreams/<id>/state.json)
 
-# For each repo in state.build.repos_touched:
-for REPO in $(jq -r '.build.repos_touched[]' .brownfield/workstreams/<id>/state.json); do
-  ( cd "$REPO" && git diff "${FIRST_COMMIT}~1..${LAST_COMMIT}" )
-done
+# Full diff for this repo's branch vs its default
+git -C "$REPO" diff "origin/$DEFAULT...$BRANCH"
 
-# Run validation tests (commands from plan.md Validation Plan section)
+# Or, equivalently, between first commit's parent and last commit:
+FIRST=$(jq -r ".build.commits[\"$REPO\"].first" .brownfield/workstreams/<id>/state.json)
+LAST=$(jq  -r ".build.commits[\"$REPO\"].last"  .brownfield/workstreams/<id>/state.json)
+git -C "$REPO" diff "${FIRST}~1..${LAST}"
 ```
 
-If `state.build.first_commit` is missing (e.g., the workstream was built by an older version), fall back to asking the user to specify the commit range manually:
-> "I can't find a recorded commit range in state.json. What commit range should I review? (e.g., `HEAD~5..HEAD`)"
+4. **Test results per repo:** run the test commands from the plan's Validation Plan section. In multi-repo, the plan should specify per-repo test commands (or fall back to each repo's `index.repos[*].test_framework`).
+
+5. **Fallback if state is incomplete:** if `state.build.commits` is missing or empty (e.g., the workstream was built by an older version of execute), fall back to:
+   - Try grepping recent git log for `(ws: <workstream-id>)` in commit messages — newer execute embeds this defensively in every commit
+   - If still nothing, ask the user: "I can't find a recorded commit range. What range should I review? (e.g., `HEAD~5..HEAD` for single-repo, or specify per-repo)"
 
 **Auto-suggestion for LARGE workstreams:** If the git diff exceeds 2000 lines or touches more than 20 files, warn the user:
 > "This is a large workstream. Verification will take longer and may benefit from being split. Proceeding anyway."
@@ -133,6 +139,40 @@ If the `codex exec` command exits with a non-zero status or produces no output, 
 > "Codex crashed or failed (exit code: <code>). Falling back to Claude skeptical-reviewer."
 
 Then proceed exactly as Path B.
+
+## Phase 4.5: Compute Recommended Merge Order (multi-repo only)
+
+For multi-repo workstreams, the order in which you merge matters. Merging the primary repo first activates new code paths before connected repos have caught up — that's a runtime breakage window. Merging connected repos first is almost always safer because they're additive (new types, new fields, new endpoints) without anyone calling them yet.
+
+Read the plan's "System Map" section plus `state.connected_repos` to determine the dependency direction:
+
+- **Tier 1 (merge first):** repos that EXPORT contracts/types others import (e.g., shared-models, schemas, protocol definitions). Branch role: `connected`.
+- **Tier 2 (merge second):** repos that CONSUME the new contracts but aren't the user-facing entry point. Branch role: `connected`.
+- **Tier 3 (merge LAST):** the primary repo — the one whose feature this is. Once this is merged, users can hit the new feature, so all dependencies must already be live. Branch role: `primary`.
+
+Append a section to `.brownfield/workstreams/<id>/verification.md`:
+
+```markdown
+## Recommended Merge Order
+
+1. **shared-models** (chore/<ws-id>) — Tier 1, exports new types
+   PR: `gh -R <owner>/shared-models pr ...`
+   Why first: api-service and billing-service both import the new `AsyncCallback` type. Merging shared-models first means consumers can pick it up cleanly.
+
+2. **billing-service** (chore/<ws-id>) — Tier 2, consumer
+   PR: `gh -R <owner>/billing-service pr ...`
+   Why second: depends on shared-models@new. Once shared-models is merged and a new version is published, billing-service can update.
+
+3. **api-service** (feature/<ws-id>) — Tier 3, primary
+   PR: `gh -R <owner>/api-service pr ...`
+   Why LAST: this is what activates the user-facing feature. Merging it before billing-service would create a window where the new code path exists but the consumer isn't ready, causing 5xx errors.
+
+## Compatibility Window
+
+Between merging Tier 1 and merging Tier 3, the system is in a "ready but not activated" state. This is safe — no user-facing change has happened yet. The window collapses the moment Tier 3 merges. If you need to roll back, roll back in REVERSE order (Tier 3 → Tier 2 → Tier 1).
+```
+
+For single-repo workstreams, skip this phase — there's only one PR to merge.
 
 ## Phase 5: Human Gate (Final)
 
