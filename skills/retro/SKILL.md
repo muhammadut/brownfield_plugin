@@ -1,5 +1,5 @@
 ---
-name: brownfield-retro
+name: retro
 description: Extract lessons learned and codebase patterns from completed workstreams. Builds persistent knowledge for future planning.
 user-invocable: true
 argument-hint: [workstream-name]
@@ -12,17 +12,18 @@ After a workstream completes, analyze all artifacts and extract persistent knowl
 ## Step 0: Check Configuration
 
 Read `.brownfield/config.json`. If missing:
-> "Brownfield isn't configured for this project. Run `/brownfield:brownfield-init` first."
+> "Brownfield isn't configured for this project. Run `/brownfield:init` first."
 
 ## Step 1: Resolve Workstream
 
 Use the standard workstream resolution priority to identify the target workstream:
 
 1. If a workstream name was passed as an argument, use it directly.
-2. If no argument, scan `.brownfield/workstreams/*/state.json` for active (non-archived) workstreams. Auto-select if only one exists.
-3. If multiple candidates exist, ask the user to choose.
+2. If no argument, scan `.brownfield/workstreams/*/state.json` for workstreams in phase `verified` or `build-complete`. These are the candidates for retro. Auto-select if only one exists.
+3. If multiple candidates exist, ask the user to choose. Prefer the most recently updated workstream as the suggested default.
+4. If still nothing found, also accept workstreams in phase `archived` whose `retro_completed_at` field is missing — this allows running retro after archiving by hand.
 
-Read `.brownfield/workstreams/<id>/state.json` to load workstream metadata (name, status, dates, tasks).
+Read `.brownfield/workstreams/<id>/state.json` to load workstream metadata (name, current phase, dates, tasks, build summary).
 
 ## Step 2: Read All Artifacts
 

@@ -350,7 +350,7 @@ Structure your output file with these exact sections:
 
 | Repo | Path | Role | Status |
 |------|------|------|--------|
-| `rpm-backend` | `.` | Main RPM backend API | Explored |
+| `api-service` | `.` | Main RPM backend API | Explored |
 | `carrier-service` | `../carrier-service` | Calls external carrier APIs | Explored |
 | `shared-models` | `../shared-models` | Shared DTOs and contracts | SKIPPED -- path not found |
 
@@ -360,7 +360,7 @@ Use the `<repo-name>:<relative-path>` format for all file paths.
 
 | Symbol | Location | Type | Relevance |
 |--------|----------|------|-----------|
-| `ClassName` | `rpm-backend:src/services/Billing.cs` | class | HIGH |
+| `ClassName` | `api-service:src/services/Billing.cs` | class | HIGH |
 | `functionName()` | `carrier-service:src/api/rates.ts` | function | MEDIUM |
 | `CONSTANT_NAME` | `shared-models:src/constants.ts` | constant | LOW |
 
@@ -372,25 +372,25 @@ Group files by their role. Use `<repo-name>:<relative-path>` format.
 
 **Models / Entities / Shared Contracts:**
 - `shared-models:src/dto/Payment.ts` -- Payment DTO used across services
-- `rpm-backend:src/models/Invoice.cs` -- Invoice entity with line items
+- `api-service:src/models/Invoice.cs` -- Invoice entity with line items
 
 **Services / Business Logic:**
-- `rpm-backend:src/services/BillingService.cs` -- Core billing calculations
+- `api-service:src/services/BillingService.cs` -- Core billing calculations
 
 **Controllers / Routes / Handlers:**
-- `rpm-backend:src/controllers/PaymentController.cs` -- Payment API endpoints
+- `api-service:src/controllers/PaymentController.cs` -- Payment API endpoints
 
 **External Integrations / API Clients:**
 - `carrier-service:src/clients/StripeClient.ts` -- Stripe payment integration
 
 **Tests:**
-- `rpm-backend:tests/BillingServiceTests.cs` -- Unit tests for billing
+- `api-service:tests/BillingServiceTests.cs` -- Unit tests for billing
 
 **Configuration:**
-- `rpm-backend:appsettings.json` -- Database and service configuration
+- `api-service:appsettings.json` -- Database and service configuration
 
 **Other:**
-- `rpm-backend:src/utils/DateHelper.cs` -- Date calculation utilities
+- `api-service:src/utils/DateHelper.cs` -- Date calculation utilities
 
 ### Dependency Flow
 
@@ -428,7 +428,7 @@ For each gap, provide:
 Example:
 - **Missing: `ProrationCalculator` service** -- The feature requires mid-cycle billing
   adjustments but no proration logic exists. Based on existing service organization,
-  this likely belongs in `rpm-backend:src/services/billing/`.
+  this likely belongs in `api-service:src/services/billing/`.
 - **Missing: `ProrationRequest` DTO** -- The carrier-service will need to receive
   proration parameters. This shared contract belongs in `shared-models:src/dto/`.
 

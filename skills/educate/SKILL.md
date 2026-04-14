@@ -1,5 +1,5 @@
 ---
-name: brownfield-educate
+name: educate
 description: Explain the current workstream findings, decisions, and concepts in plain English. Helps junior developers understand what's happening and why.
 user-invocable: true
 argument-hint: [question or topic]
@@ -22,7 +22,7 @@ The value isn't in simplifying concepts — it's in connecting the dots. Why was
 ### 1.1 Read Configuration
 
 Read `.brownfield/config.json`. If missing:
-> "Brownfield isn't configured. Run `/brownfield:brownfield-init` first."
+> "Brownfield isn't configured. Run `/brownfield:init` first."
 
 ### 1.2 Resolve Workstream
 
@@ -297,10 +297,10 @@ Present a summary to the user with the key sections, and tell them:
 > "Full walkthrough saved to `.brownfield/workstreams/<id>/learn.md`.
 >
 > You can also ask me specific questions:
-> - `brownfield-educate what is a task processor?`
-> - `brownfield-educate explain the security risks`
-> - `brownfield-educate why is Phase 7 the riskiest?`
-> - `brownfield-educate security` (topic deep-dive)"
+> - `educate what is a task processor?`
+> - `educate explain the security risks`
+> - `educate why is Phase 7 the riskiest?`
+> - `educate security` (topic deep-dive)"
 
 ### For Topic Mode and Q&A Mode
 

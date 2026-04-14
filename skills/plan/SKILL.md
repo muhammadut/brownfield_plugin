@@ -1,5 +1,5 @@
 ---
-name: brownfield-plan
+name: plan
 description: Plan a feature. Researches best practices, explores codebase, synthesizes self-contained execution plan with auto-review.
 user-invocable: true
 argument-hint: <feature-description> [--light] [--discussion] [--no-questions]
@@ -14,17 +14,18 @@ You are the Brownfield planning orchestrator. Your job is to research best pract
 ### 1.1 Read Configuration
 
 Read `.brownfield/config.json`. If it doesn't exist, stop and tell the user:
-> "Brownfield isn't configured for this project yet. Run `/brownfield:brownfield-init` first."
+> "Brownfield isn't configured for this project yet. Run `/brownfield:init` first."
 
 Store the config values — you'll need them throughout:
 - `paths.plugin_root` (absolute path to Brownfield plugin — needed to find agent definitions)
-- `paths.knowledge_dir` (where repos and wikis are stored)
-- `project_type` (brownfield/greenfield)
-- `stack` (language, framework, test_framework, orm, runtime)
-- `index.repos` (array of {name, path, language, framework})
+- `workspace_type` (`single-repo` or `multi-repo`)
+- `index.repos` (array of {name, path, language, framework, test_framework, orm, runtime}) — per-repo stack info lives here
 - `index.knowledge_sources` (array of {name, path, type})
+- `index.languages` (convenience breakdown)
 - `experts` (array of expert domain strings)
 - `review.tool` (codex/skeptical-reviewer), `review.fallback`
+
+**Note on stack info:** there is no top-level `stack` field. Each repo's stack lives in `index.repos[*]` as `language`, `framework`, `test_framework`, `orm`, `runtime`. After Phase 1.6 (Primary Repo Selection) you'll have `primary_repo` — its stack info comes from the matching `index.repos` entry. Pass that per-repo stack info into agent prompts as the "Stack" parameter.
 
 ### 1.2 Parse Arguments
 
@@ -35,8 +36,8 @@ The input comes from `$ARGUMENTS`. Parse it for:
 - **`--no-questions` or `--skip-clarify` flag:** Skip Phase 1.8 clarifying questions
 
 Examples:
-- `Add async carrier callbacks` → feature, mode: standard, ask questions
-- `Fix null ref in QuotationValidator.cs line 47 --light` → feature, mode: light
+- `Add async webhook callbacks` → feature, mode: standard, ask questions
+- `Fix null ref in order-validator.ts line 47 --light` → feature, mode: light
 - `Should we use Event Sourcing for billing? --discussion` → feature, mode: discussion
 - `Add OAuth2 login --no-questions` → skip clarification, proceed with original description
 
@@ -48,7 +49,7 @@ If the feature description is empty, ask the user: "What feature do you want to 
 2. Slugify them (lowercase, hyphens, remove special chars)
 3. Append the date as YYYYMMDD
 
-Example: "Add async carrier callbacks" → `async-carrier-callbacks-20260403`
+Example: "Add async webhook callbacks" → `async-webhook-callbacks-20260413`
 
 ### 1.4 Workstream Resolution
 
@@ -107,7 +108,7 @@ Look at the feature description and the indexed repos. Suggest the most likely p
 
 > "For '**<feature description>**', which repo is the primary target?
 >
-> Suggested: **connector-api** (C# / ASP.NET Core) — name matches the feature context
+> Suggested: **api-service** (TypeScript / Express) — name matches the feature context
 >
 > Or choose from: <list of other repos that could be relevant>
 >
@@ -116,7 +117,7 @@ Look at the feature description and the indexed repos. Suggest the most likely p
 Store the primary repo in the workstream state:
 ```json
 {
-  "primary_repo": {"name": "connector-api", "path": "./connector-api", "language": "csharp"}
+  "primary_repo": {"name": "api-service", "path": "./api-service", "language": "typescript"}
 }
 ```
 
@@ -133,10 +134,10 @@ After the user confirms the primary repo, automatically trace its dependencies t
 2. For each connected repo found, trace ITS dependencies too (one more level deep).
 
 3. Present the discovered graph:
-> "**connector-api** connects to:
->   → **shared-models** (ProjectReference in connector-api.csproj)
->   → **rpm-gateway** (imports ConnectorClient from connector-api)
->   → **quotation-api** (both reference shared-models)
+> "**api-service** connects to:
+>   → **shared-models** (workspace dependency in package.json)
+>   → **api-gateway** (imports ApiClient from api-service)
+>   → **billing-service** (both reference shared-models)
 >
 > These 4 repos will be the focus of analysis. The other <N> indexed repos are available if agents need them."
 
@@ -145,11 +146,11 @@ After the user confirms the primary repo, automatically trace its dependencies t
 Store in workstream state:
 ```json
 {
-  "primary_repo": {"name": "connector-api", "path": "./connector-api"},
+  "primary_repo": {"name": "api-service", "path": "./api-service"},
   "connected_repos": [
-    {"name": "shared-models", "path": "./shared-models", "relationship": "ProjectReference"},
-    {"name": "rpm-gateway", "path": "./rpm-gateway", "relationship": "imports ConnectorClient"},
-    {"name": "quotation-api", "path": "./quotation-api", "relationship": "shared dependency"}
+    {"name": "shared-models", "path": "./shared-models", "relationship": "workspace dependency"},
+    {"name": "api-gateway", "path": "./api-gateway", "relationship": "imports ApiClient"},
+    {"name": "billing-service", "path": "./billing-service", "relationship": "shared dependency"}
   ],
   "knowledge_sources": [{"name": "wiki", "path": "./wiki"}]
 }
@@ -310,13 +311,13 @@ Skip entirely for LIGHT. For DISCUSSION: research only, skip Phase 4.
 
 ### 3.0 Check for Research Preload
 
-Before spawning research agents, check if a research preload exists from `/brownfield:brownfield-research`:
+Before spawning research agents, check if a research preload exists from `/brownfield:research`:
 
 ```
 .brownfield/workstreams/<id>/research-preload.md
 ```
 
-If this file exists, read it and skip Step 3.1 (research agent spawning). The user already did research via `/brownfield:brownfield-research` and converted it to this workstream. Use the preloaded findings directly — do not duplicate research.
+If this file exists, read it and skip Step 3.1 (research agent spawning). The user already did research via `/brownfield:research` and converted it to this workstream. Use the preloaded findings directly — do not duplicate research.
 
 If the file does NOT exist, proceed to Step 3.1 as normal.
 
@@ -782,8 +783,8 @@ On **Approve**: Update state to `plan-approved`.
 ```
 Plan approved. To execute:
 1. Clear your context (Ctrl+L or start a new session)
-2. Run /brownfield:brownfield-execute
-   OR /brownfield:brownfield-execute <workstream-name> if you have multiple workstreams
+2. Run /brownfield:execute
+   OR /brownfield:execute <workstream-name> if you have multiple workstreams
 
 The plan is fully self-contained — the executor needs no prior context.
 ```
@@ -796,8 +797,8 @@ On **Reject**: Reset state to `planning`, ask for new direction.
 
 | Edge Case | What Happens |
 |-----------|-------------|
-| `/brownfield:brownfield-execute` with no approved plan | "No approved plan found. Run `/brownfield:brownfield-plan` first." |
-| `/brownfield:brownfield-plan` with no config | "Brownfield not configured. Run `/brownfield:brownfield-init` first." |
+| `/brownfield:execute` with no approved plan | "No approved plan found. Run `/brownfield:plan` first." |
+| `/brownfield:plan` with no config | "Brownfield not configured. Run `/brownfield:init` first." |
 | Codex CLI not installed | Fallback to skeptical-reviewer, warn user |
 | Configured repo path doesn't exist | Warn: "Repo '<name>' not found at path. Skipping." Continue with available repos |
 | Conflicting research results | Plan presents both sides with tradeoffs, doesn't silently pick one |

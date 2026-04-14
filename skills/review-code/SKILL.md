@@ -1,5 +1,5 @@
 ---
-name: brownfield-review-code
+name: review-code
 description: Dual-reviewer code review. Launches Architect + Adversary reviewers in parallel, synthesizes findings with attribution across 7 review dimensions.
 user-invocable: true
 argument-hint: [--branch <name>] [--commits <range>] [--pr <id>] [--files <paths>] [--workstream <id>]
@@ -33,7 +33,7 @@ If on `main`/`master`, ask the user what to review.
 
 Read `.brownfield/config.json` for:
 - `paths.plugin_root`
-- `paths.knowledge_dir`
+- `workspace_type` (`single-repo` or `multi-repo`)
 - `index.repos` — to determine which repo(s) the changes touch
 - `review.tool` — "codex" or "skeptical-reviewer"
 

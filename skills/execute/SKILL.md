@@ -1,5 +1,5 @@
 ---
-name: brownfield-execute
+name: execute
 description: Execute an approved plan using sub-agents. Reads self-contained plan from disk — needs no prior context.
 user-invocable: true
 argument-hint: [workstream-name]
@@ -16,12 +16,14 @@ You are the Brownfield execution orchestrator. Your job is to take an approved i
 ### 1.1 Read Configuration
 
 Read `.brownfield/config.json`. If missing:
-> "Brownfield isn't configured. Run `/brownfield:brownfield-init` first."
+> "Brownfield isn't configured. Run `/brownfield:init` first."
 
 Store:
-- `stack` — language, framework, test_framework (for test commands and sub-agent prompts)
-- `index.repos` — all indexed repos (the plan's metadata identifies which are relevant)
+- `workspace_type` — `single-repo` or `multi-repo` (drives whether sub-agents need to `cd` into a repo)
+- `index.repos` — all indexed repos with per-repo stack info (`language`, `framework`, `test_framework`, `orm`, `runtime`). Sub-agents derive test commands from the matching repo entry, not from a top-level `stack` field.
 - `experts` — expert domains
+
+**Note:** there is no top-level `stack` field. Look up stack info per-repo in `index.repos`.
 
 ### 1.2 Resolve Workstream
 
@@ -37,15 +39,30 @@ Read `state.json` from the workstream directory. Phase must be `plan-approved` o
 - If `plan-approved`: proceed
 - If `building`: check for existing progress (see Phase 2 resume logic)
 - If earlier phase: guide to the correct next step
-- If `build-complete` or later: "Build is already complete. Next step: `/brownfield:brownfield-verify`"
+- If `build-complete` or later: "Build is already complete. Next step: `/brownfield:verify`"
 
 ### 1.4 Check for Uncommitted Changes
 
-Run `git status --porcelain`. If there are uncommitted changes, warn:
-> "You have uncommitted changes in your working tree. Stash them before building? [Y/n]"
+Behavior depends on `workspace_type`:
 
-On **Y**: run `git stash push -m "brownfield-execute: stash before build"` and proceed.
-On **n**: proceed with warning that conflicts may occur.
+**Single-repo workspace** (`workspace_type == "single-repo"`): run `git status --porcelain` in cwd.
+
+**Multi-repo workspace** (`workspace_type == "multi-repo"`): cwd is NOT a git repo. Iterate over `index.repos` and run `git status --porcelain` from inside each repo's path:
+
+```bash
+for REPO in "${REPOS[@]}"; do
+  ( cd "$REPO" && git status --porcelain )
+done
+```
+
+If any repo has uncommitted changes, list them and warn:
+> "You have uncommitted changes in: <repo names>. Stash them before building? [Y/n]"
+
+On **Y**: stash each affected repo independently:
+```bash
+( cd "$REPO" && git stash push -m "execute: stash before build" )
+```
+On **n**: proceed with warning that conflicts may occur in those repos.
 
 ### 1.5 Update State
 
@@ -170,15 +187,20 @@ You are implementing Task {N.M} from a Brownfield execution plan.
 ## Your Task
 {paste the task section from plan.md — includes Before/After code, tests, effects}
 
+## Target Repo
+**Repo:** {paste the task's "Repo:" field from plan.md — this is the relative path to the git repo this task lives in}
+**Workspace type:** {single-repo|multi-repo}
+
 ## Rules
 1. Implement ONLY what the task specifies. Stay within the clarified scope above — do NOT expand beyond it.
 2. If the task seems to violate the clarified scope (e.g., adds functionality marked "out of scope"), STOP and report FAIL with a scope violation note.
 3. Read files fresh from disk before editing — a teammate may have changed them.
-4. Run the specified tests. All must pass.
-5. Commit with conventional format: feat|fix|refactor: <desc> (task N.M)
-   Use a HEREDOC for the commit message.
-6. Stage specific files only — not git add .
-7. Report results in this exact format:
+4. **In a multi-repo workspace, ALL git commands (`git add`, `git commit`, `git status`) must be run from inside the target repo's path.** Either `cd` into the repo first or use `git -C <repo-path> <command>`. File paths in `git add` are relative to the repo, not to the workspace root.
+5. Run the specified tests. All must pass. Test commands also run from inside the repo.
+6. Commit with conventional format: feat|fix|refactor: <desc> (task N.M, ws: {workstream_id})
+   Use a HEREDOC for the commit message. Embedding the workstream id makes verify's diff lookup robust as a fallback.
+7. Stage specific files only — not git add .
+8. Report results in this exact format:
 
 ## Task Result
 - Status: PASS | FAIL
@@ -285,7 +307,8 @@ Validation: PASS | FAIL
 
 ### 6.3 Update State
 
-Update `state.json` phase to `build-complete`:
+Update `state.json` phase to `build-complete`. Track the commit range AND the list of repos that received commits — `verify` reads `repos_touched` to compute per-repo diffs:
+
 ```json
 {
   "phase": "build-complete",
@@ -296,10 +319,15 @@ Update `state.json` phase to `build-complete`:
     "tasks_skipped": "<N>",
     "tests_passing": "<N>",
     "first_commit": "<hash>",
-    "last_commit": "<hash>"
+    "last_commit": "<hash>",
+    "repos_touched": ["./api-service", "./web-app"]
   }
 }
 ```
+
+**`repos_touched`** is the list of repo paths (matching `index.repos[*].path`) that received at least one commit during this workstream. For a single-repo workspace, this is `["."]`. For multi-repo, it's the deduplicated list of "Repo:" field values from every PASSED task in the plan.
+
+`first_commit` and `last_commit` are the hashes from the **primary repo** (the first one touched). For the multi-repo case, `verify` walks each entry in `repos_touched` and computes a diff per repo using these hashes (each repo has the same workstream commit range because the build runs serialized).
 
 ### 6.4 Present Summary
 
@@ -321,7 +349,7 @@ Update `state.json` phase to `build-complete`:
 > Review all changes: `git diff {first-commit}~1..HEAD`
 > Build log: `.brownfield/workstreams/{id}/build-log.md`
 >
-> Next step: `/brownfield:brownfield-verify` for adversarial code verification."
+> Next step: `/brownfield:verify` for adversarial code verification."
 
 ## Edge Cases
 

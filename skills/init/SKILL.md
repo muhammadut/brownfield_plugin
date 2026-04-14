@@ -1,5 +1,5 @@
 ---
-name: brownfield-init
+name: init
 description: Initialize Brownfield in an existing codebase. Detects platform, scans local repos (single or multi-repo workspace), identifies tech stacks and expert domains, checks review tools, and writes a complete config.
 user-invocable: true
 ---
@@ -14,7 +14,7 @@ You are the Brownfield initialization orchestrator. Your job is to:
 4. **Check for review tools** (Codex CLI optional; falls back to skeptical-reviewer)
 5. **Write a complete config** with all discovered paths
 
-The expected flow is: user opens Claude Code in their working directory, runs `/brownfield:brownfield-init`, and Brownfield indexes whatever is already there.
+The expected flow is: user opens Claude Code in their working directory, runs `/brownfield:init`, and Brownfield indexes whatever is already there.
 
 > **Note:** Brownfield is for **existing codebases**. If you're starting from an empty directory and need to plan + scaffold a new project from scratch, use the `greenfield` plugin instead.
 
@@ -28,7 +28,7 @@ This step runs silently — no user interaction.
 
 **1a. Find the plugin root directory:**
 
-This SKILL.md is at `skills/brownfield-init/SKILL.md` inside the plugin. The plugin root is two directories up. Use Glob to confirm and store the absolute path.
+This SKILL.md is at `skills/init/SKILL.md` inside the plugin. The plugin root is two directories up. Use Glob to confirm and store the absolute path.
 
 **1b. Detect the platform:**
 
@@ -210,12 +210,12 @@ Create:
 ```
 .brownfield/
   config.json                         (written in Step 7)
-  workstreams/                        (empty — for /brownfield:brownfield-plan workstreams)
+  workstreams/                        (empty — for /brownfield:plan workstreams)
   learning/
     codebase-patterns.md              (placeholder)
     lessons-learned.md                (placeholder)
-  investigations/                     (empty — for /brownfield:brownfield-investigate)
-  reviews/                            (empty — for /brownfield:brownfield-review-code)
+  investigations/                     (empty — for /brownfield:investigate)
+  reviews/                            (empty — for /brownfield:review-code)
 ```
 
 Write `codebase-patterns.md`:
@@ -223,9 +223,13 @@ Write `codebase-patterns.md`:
 ```markdown
 # Codebase Patterns
 
+Conventions and patterns discovered during workstreams. Referenced by agents during planning and building.
+
 > Auto-populated by Brownfield agents as they discover patterns in your codebase.
 > Do not delete — agents append here and reference during planning.
 ```
+
+(The header text matches what `retro` writes when creating the file from scratch — keeping them aligned prevents the first retro from creating a competing header section.)
 
 Write `lessons-learned.md`:
 
@@ -306,7 +310,7 @@ Notes on config values:
 
 Adapt every line to actual values. Then suggest the next step:
 
-> Start planning: `/brownfield:brownfield-plan <describe your feature>`
+> Start planning: `/brownfield:plan <describe your feature>`
 
 ## Edge Case Reference
 
@@ -330,7 +334,7 @@ Adapt every line to actual values. Then suggest the next step:
 - Do NOT use AskUserQuestion — just ask questions via text output
 - Auto-detect as much as possible to minimize user input
 - The config file is the single source of truth for all other Brownfield skills
-- The role of each repo is NOT defined here — it is discovered dynamically during `/brownfield:brownfield-plan`
+- The role of each repo is NOT defined here — it is discovered dynamically during `/brownfield:plan`
 - If detection fails for any field, set it to `null` — do not block init
 - Brownfield is for **existing codebases**. For empty directories or new projects, use the `greenfield` plugin
 - Knowledge source directories (wiki/, docs/) are indexed as references, not as code repos

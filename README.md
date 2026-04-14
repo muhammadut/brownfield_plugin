@@ -58,16 +58,16 @@ The 10 user-invocable skills give you a complete brownfield development loop. Th
 
 | Command | Purpose |
 |---|---|
-| `/brownfield:brownfield-init` | Index the workspace, detect stacks, write config |
-| `/brownfield:brownfield-plan` | Plan a feature: research → analyze → write self-contained plan → auto-review |
-| `/brownfield:brownfield-execute` | Execute an approved plan with phase gates |
-| `/brownfield:brownfield-verify` | Verify what was built against the plan (Codex or Claude) |
-| `/brownfield:brownfield-research` | Research-only mode: produce findings without writing a plan |
-| `/brownfield:brownfield-investigate` | Deep investigation: PRs, tickets, symbols, decisions, root causes |
-| `/brownfield:brownfield-review-code` | Dual-reviewer code review (Architect + Adversary lenses) |
-| `/brownfield:brownfield-retro` | Capture lessons learned from a workstream into the learning system |
-| `/brownfield:brownfield-educate` | Codebase teaching mode: explain how something works |
-| `/brownfield:brownfield-status` | Show all workstreams and where they are |
+| `/brownfield:init` | Index the workspace, detect stacks, write config |
+| `/brownfield:plan` | Plan a feature: research → analyze → write self-contained plan → auto-review |
+| `/brownfield:execute` | Execute an approved plan with phase gates |
+| `/brownfield:verify` | Verify what was built against the plan (Codex or Claude) |
+| `/brownfield:research` | Research-only mode: produce findings without writing a plan |
+| `/brownfield:investigate` | Deep investigation: PRs, tickets, symbols, decisions, root causes |
+| `/brownfield:review-code` | Dual-reviewer code review (Architect + Adversary lenses) |
+| `/brownfield:retro` | Capture lessons learned from a workstream into the learning system |
+| `/brownfield:educate` | Codebase teaching mode: explain how something works |
+| `/brownfield:status` | Show all workstreams and where they are |
 
 ---
 
@@ -79,8 +79,8 @@ The 10 user-invocable skills give you a complete brownfield development loop. Th
 | Existing codebase, adding a feature | **brownfield** |
 | Existing codebase, fixing a bug | **brownfield** |
 | Existing codebase, refactoring | **brownfield** |
-| Existing codebase, investigating a PR or symbol | **brownfield** (use `/brownfield:brownfield-investigate`) |
-| Existing codebase, reviewing changes | **brownfield** (use `/brownfield:brownfield-review-code`) |
+| Existing codebase, investigating a PR or symbol | **brownfield** (use `/brownfield:investigate`) |
+| Existing codebase, reviewing changes | **brownfield** (use `/brownfield:review-code`) |
 | Multi-repo workspace, cross-repo feature | **brownfield** (with multi-repo enabled in init) |
 | New microservice in an existing platform | **greenfield** for the service scaffold, then **brownfield** for features |
 
@@ -147,7 +147,7 @@ brew install codex
 codex auth login
 ```
 
-`brownfield-init` auto-detects Codex availability and configures `review.tool` accordingly.
+`init` auto-detects Codex availability and configures `review.tool` accordingly.
 
 ---
 
@@ -166,7 +166,7 @@ claude
 In Claude Code:
 
 ```
-/brownfield:brownfield-init
+/brownfield:init
 ```
 
 Brownfield will:
@@ -182,7 +182,7 @@ Brownfield will:
 Now plan a feature:
 
 ```
-/brownfield:brownfield-plan Add OAuth2 login with Google
+/brownfield:plan Add OAuth2 login with Google
 ```
 
 Brownfield will:
@@ -200,19 +200,19 @@ Brownfield will:
 Approve the plan, then **clear your context** (Ctrl+L or new session) and:
 
 ```
-/brownfield:brownfield-execute
+/brownfield:execute
 ```
 
 Brownfield will execute the plan with phase gates, running tests between phases. When complete:
 
 ```
-/brownfield:brownfield-verify
+/brownfield:verify
 ```
 
 Adversarial review of what was built. Codex (or skeptical-reviewer) reads the actual diff and the plan, and reports any drift, gaps, or regressions. Then capture the lessons learned:
 
 ```
-/brownfield:brownfield-retro
+/brownfield:retro
 ```
 
 Lessons get written to `.brownfield/learning/` and every future plan reads them as input. The next feature you ship will benefit from this one.
@@ -221,7 +221,7 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 
 ## The 10 commands — full reference
 
-### `/brownfield:brownfield-init`
+### `/brownfield:init`
 
 **Purpose:** Initialize Brownfield in an existing codebase by indexing repos, detecting tech stacks, identifying expert domains, and writing a config file.
 
@@ -247,7 +247,7 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 - `.brownfield/learning/lessons-learned.md` (placeholder)
 - Empty `workstreams/`, `investigations/`, `reviews/` directories
 
-### `/brownfield:brownfield-plan <feature-description> [--light] [--discussion] [--no-questions]`
+### `/brownfield:plan <feature-description> [--light] [--discussion] [--no-questions]`
 
 **Purpose:** Plan a feature with research, codebase analysis, and adversarial review. Produces a self-contained execution plan.
 
@@ -275,30 +275,30 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 - `.brownfield/workstreams/<id>/agent-outputs/` — full-fidelity agent reports (researcher, expert-researcher, pattern-detector, code-explorer, security-analyzer)
 - `.brownfield/workstreams/<id>/review-decisions.md` — what was accepted/rejected from the auto-review
 
-### `/brownfield:brownfield-execute [<workstream-id>]`
+### `/brownfield:execute [<workstream-id>]`
 
 **Purpose:** Execute an approved plan with phase gates and test checkpoints.
 
-**Prerequisites:** A workstream with `state.phase == "plan-approved"`.
+**Prerequisites:** A workstream with `state.phase == "plan-approved"` (or `"building"` to resume).
 
 **Behavior:**
 1. Find the active approved workstream (or use the optional `<workstream-id>` argument)
 2. Read `plan.md` — the plan is self-contained, so no other context is needed
 3. For each phase in the plan:
-   - Execute each task in order (CREATE/MODIFY operations)
+   - Execute each task in order (CREATE/MODIFY operations) — sub-agents `cd` into the right repo for multi-repo workspaces
    - Run the phase gate (test command) before proceeding
    - If the gate fails, stop and report
-4. Update workstream state to `executed`
-5. Suggest `/brownfield:brownfield-verify` next
+4. Update workstream state to `build-complete` and record `build.first_commit`, `build.last_commit`, `build.repos_touched` in `state.json`
+5. Suggest `/brownfield:verify` next
 
-### `/brownfield:brownfield-verify [<workstream-id>]`
+### `/brownfield:verify [<workstream-id>]`
 
 **Purpose:** Adversarial review of what was built against the plan. Catches drift, gaps, regressions.
 
-**Prerequisites:** A workstream with `state.phase == "executed"`.
+**Prerequisites:** A workstream with `state.phase == "build-complete"` (or `"verified"` to re-verify).
 
 **Behavior:**
-1. Read `plan.md` and the actual diff (git diff between workstream start and HEAD)
+1. Read `plan.md` and the diff. Verify reads the commit range from `state.build.first_commit`/`last_commit` (NOT by grepping git log for the workstream id — that would always come back empty). For multi-repo workspaces, it iterates over `state.build.repos_touched` and computes a per-repo diff.
 2. Invoke Codex CLI (if `review.tool == "codex"`) to review:
    - Does the implementation match the plan?
    - Are there missing pieces?
@@ -306,9 +306,9 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
    - Are there regressions in untouched code?
 3. If Codex unavailable, invoke `skeptical-reviewer` agent
 4. Write verification report to `.brownfield/workstreams/<id>/verification.md`
-5. Update workstream state to `verified` if clean, else `verification-failed`
+5. Update workstream state to `verified` (retro is the next step and will archive)
 
-### `/brownfield:brownfield-research <topic>`
+### `/brownfield:research <topic>`
 
 **Purpose:** Research-only mode. Produce findings without writing an execution plan. Useful for exploring options before committing to a feature plan.
 
@@ -316,11 +316,11 @@ Lessons get written to `.brownfield/learning/` and every future plan reads them 
 1. Spawn researcher + expert-researcher agents on the topic
 2. Synthesize a research brief
 3. Write to `.brownfield/workstreams/<id>/research-preload.md`
-4. Tell the user: "Research preloaded. Run `/brownfield:brownfield-plan` later and the plan skill will use these findings instead of re-running research."
+4. Tell the user: "Research preloaded. Run `/brownfield:plan` later and the plan skill will use these findings instead of re-running research."
 
 This is how you separate research from planning when you want to think before deciding.
 
-### `/brownfield:brownfield-investigate <query>`
+### `/brownfield:investigate <query>`
 
 **Purpose:** Deep investigation of code, PRs, tickets, decisions, or root causes. Produces a written report.
 
@@ -343,7 +343,7 @@ This is how you separate research from planning when you want to think before de
 **Outputs:**
 - `.brownfield/investigations/<date>-<topic>.md`
 
-### `/brownfield:brownfield-review-code [--branch <name>] [--commits <range>] [--pr <id>] [--files <paths>] [--workstream <id>]`
+### `/brownfield:review-code [--branch <name>] [--commits <range>] [--pr <id>] [--files <paths>] [--workstream <id>]`
 
 **Purpose:** Dual-reviewer code review with Architect + Adversary lenses running in parallel. Synthesizes findings across 7 review dimensions.
 
@@ -364,37 +364,37 @@ This is how you separate research from planning when you want to think before de
 - `.brownfield/reviews/<date>-<id>/adversary-review.md`
 - `.brownfield/reviews/<date>-<id>/synthesized-report.md`
 
-### `/brownfield:brownfield-retro [<workstream-id>]`
+### `/brownfield:retro [<workstream-id>]`
 
 **Purpose:** Capture lessons learned from a completed workstream into the learning system. Future plans will read these lessons.
 
-**Prerequisites:** A workstream with `state.phase == "verified"` (or any completed phase).
+**Prerequisites:** A workstream with `state.phase == "verified"` or `"build-complete"` (retro can run before verify if needed).
 
 **Behavior:**
-1. Read the workstream's plan, agent outputs, verification report
+1. Read the workstream's plan, agent outputs, verification report (if present)
 2. Identify lessons:
    - What patterns worked and should be repeated?
    - What went wrong and shouldn't be repeated?
    - What was discovered about the codebase that wasn't in the existing patterns file?
 3. Append entries to `.brownfield/learning/codebase-patterns.md` and `.brownfield/learning/lessons-learned.md`
-4. Update workstream state to `retroed`
+4. Update workstream state to `archived` and record `retro_completed_at`
 
-### `/brownfield:brownfield-educate <topic>`
+### `/brownfield:educate [topic]`
 
-**Purpose:** Codebase teaching mode. Explain how something works in the codebase, with code references and architecture context. Useful for onboarding or learning a codebase you didn't write.
+**Purpose:** Workstream learning mode. Explain the current workstream's findings, decisions, and concepts in plain engineering language so junior developers (or your future self) can understand WHY decisions were made, not just WHAT. Optionally takes a topic to focus the explanation.
 
 **Behavior:**
 1. Locate the topic in the codebase (using code-explorer)
-2. Trace its dependencies and call sites
-3. Produce a teaching-style explanation with:
-   - High-level purpose
-   - Key code references with line numbers
-   - Data flow / control flow diagrams (Mermaid)
-   - Common gotchas
-   - Where to make changes safely
-4. Optionally save to `.brownfield/investigations/educate-<topic>.md`
+2. Read the relevant workstream artifacts (plan, ADRs, agent outputs, verification report)
+3. Produce a teaching-style explanation that connects the dots:
+   - What was decided, in plain engineering language
+   - WHY it was decided that way (which alternatives were rejected and why)
+   - What production concerns drove the choice
+   - What would have gone wrong with the alternative
+   - File:line references to where the decision lives in the code
+4. Scale depth to the audience — assume the reader is an engineer who needs to understand the reasoning, not a beginner who needs vocabulary explained
 
-### `/brownfield:brownfield-status`
+### `/brownfield:status`
 
 **Purpose:** Show all workstreams and where they are. Read-only.
 
@@ -535,7 +535,7 @@ Brownfield writes everything to `.brownfield/` inside your target project. Plugi
 
 ```
 .brownfield/
-├── config.json                    # written by brownfield-init
+├── config.json                    # written by init
 ├── workstreams/                   # one directory per feature/task
 │   ├── oauth2-google-login-20260413/
 │   │   ├── state.json             # workstream state machine
@@ -549,16 +549,16 @@ Brownfield writes everything to `.brownfield/` inside your target project. Plugi
 │   │   ├── review-decisions.md    # what was accepted/rejected from auto-review
 │   │   ├── review-raw.md          # raw Codex/skeptical-reviewer output
 │   │   ├── verification.md        # post-execute verification report
-│   │   └── research-preload.md    # if /brownfield:brownfield-research was run first
+│   │   └── research-preload.md    # if /brownfield:research was run first
 │   └── ... (other workstreams)
 ├── learning/
 │   ├── codebase-patterns.md       # discovered conventions, appended over time
 │   └── lessons-learned.md         # postmortems and retros, appended over time
-├── investigations/                # written by /brownfield:brownfield-investigate
+├── investigations/                # written by /brownfield:investigate
 │   ├── 2026-04-13-pr-7337.md
 │   ├── 2026-04-14-payment-flow.md
 │   └── ...
-└── reviews/                       # written by /brownfield:brownfield-review-code
+└── reviews/                       # written by /brownfield:review-code
     ├── 2026-04-13-feature-x/
     │   ├── architect-review.md
     │   ├── adversary-review.md
@@ -582,7 +582,7 @@ Brownfield writes everything to `.brownfield/` inside your target project. Plugi
                            │  Existing codebase  │
                            └──────────┬──────────┘
                                       │
-                                      │ /brownfield:brownfield-init (once)
+                                      │ /brownfield:init (once)
                                       ▼
                            ┌─────────────────────┐
                            │   Indexed config    │
@@ -591,49 +591,48 @@ Brownfield writes everything to `.brownfield/` inside your target project. Plugi
                                       │
               ┌───────────────────────┼───────────────────────┐
               │                       │                       │
-              │                       │                       │
               ▼                       ▼                       ▼
-   ┌──────────────────┐    ┌────────────────────┐    ┌──────────────────┐
-   │ brownfield-      │    │  brownfield-plan   │    │ brownfield-      │
-   │ investigate      │    │                    │    │ educate          │
-   │ (PR / ticket /   │    │   research →      │    │ (teach me)       │
-   │  symbol / etc.)  │    │   analyze →       │    │                  │
-   │                  │    │   synthesize →    │    │                  │
-   └──────────────────┘    │   auto-review →   │    └──────────────────┘
-                           │   present         │
-                           └──────────┬─────────┘
+   ┌──────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
+   │  /investigate    │    │     /plan           │    │   /educate       │
+   │  (PR / ticket /  │    │  research →         │    │  (teach me)      │
+   │  symbol / etc.)  │    │  analyze →          │    │                  │
+   │                  │    │  synthesize →       │    │                  │
+   │                  │    │  auto-review →      │    │                  │
+   └──────────────────┘    │  present            │    └──────────────────┘
+                           └──────────┬──────────┘
                                       │
                                       │ user approves
                                       ▼
                            ┌─────────────────────┐
-                           │  brownfield-execute │
-                           │   (phase gates,     │
-                           │    test checkpoints)│
+                           │     /execute        │
+                           │  (phase gates,      │
+                           │   test checkpoints) │
                            └──────────┬──────────┘
                                       │
                                       ▼
                            ┌─────────────────────┐
-                           │  brownfield-verify  │
-                           │ (Codex / Claude     │
-                           │  adversarial)       │
+                           │     /verify         │
+                           │  (Codex / Claude    │
+                           │   adversarial)      │
                            └──────────┬──────────┘
                                       │
                                       ▼
                            ┌─────────────────────┐
-                           │  brownfield-retro   │
-                           │ (lessons learned)   │
+                           │     /retro          │
+                           │  (lessons learned   │
+                           │   + archive)        │
                            └──────────┬──────────┘
                                       │
                                       ▼
                            ┌─────────────────────┐
                            │  Updated learning   │
-                           │  Future plans      │
-                           │  benefit           │
+                           │  Future plans       │
+                           │  benefit            │
                            └─────────────────────┘
 ```
 
-Use `/brownfield:brownfield-status` at any time to see all workstreams.
-Use `/brownfield:brownfield-review-code` independently to review any diff/PR/branch — it doesn't require a workstream.
+Use `/brownfield:status` at any time to see all workstreams.
+Use `/brownfield:review-code` independently to review any diff/PR/branch — it doesn't require a workstream.
 
 ---
 
@@ -720,26 +719,28 @@ This is the difference between an AI that improves over time and one that doesn'
 Every plan/execute/verify cycle is a **workstream**. Workstreams have a state machine:
 
 ```
-planning → plan-approved → executing → executed → verified → retroed
-                  │                          │
-                  ▼                          ▼
-             plan-rejected         verification-failed
+planning → plan-approved → building → build-complete → verifying → verified → archived
+                  │                                            │
+                  ▼                                            ▼
+             plan-rejected                          (Fix issues, re-run /brownfield:verify)
 ```
 
-Each workstream lives in its own directory under `.brownfield/workstreams/<id>/`. The state is in `state.json`. Multiple workstreams can be active simultaneously — `/brownfield:brownfield-status` shows them all.
+`archived` is reached when `/brownfield:retro` runs. Retro is the final step of the loop and is what writes lessons learned into `.brownfield/learning/`.
+
+Each workstream lives in its own directory under `.brownfield/workstreams/<id>/`. The state is in `state.json`. Multiple workstreams can be active simultaneously — `/brownfield:status` shows them all.
 
 Workstream IDs are auto-generated from feature description + date:
 - `add-oauth2-login-20260413`
-- `fix-null-ref-quotation-validator-20260413`
+- `fix-null-ref-order-validator-20260413`
 - `event-sourcing-billing-20260413`
 
-You don't pick workstream IDs — they're stable, sortable, and meaningful.
+You don't pick workstream IDs — they're stable, sortable, and meaningful. The same ID is generated by `/brownfield:research` and `/brownfield:plan` for the same feature description on the same day, which is how the research preload handoff works.
 
 ---
 
 ## Configuration
 
-`.brownfield/config.json` is the single source of truth for all skills. Written by `brownfield-init`. Read by every other skill.
+`.brownfield/config.json` is the single source of truth for all skills. Written by `init`. Read by every other skill.
 
 Example:
 
@@ -775,7 +776,7 @@ Example:
 }
 ```
 
-Re-run `/brownfield:brownfield-init` any time to refresh the config.
+Re-run `/brownfield:init` any time to refresh the config.
 
 ---
 
@@ -796,7 +797,7 @@ Re-run `/brownfield:brownfield-init` any time to refresh the config.
 ### "Brownfield isn't configured for this project yet"
 
 Cause: `.brownfield/config.json` doesn't exist in the current working directory.
-Fix: Run `/brownfield:brownfield-init`.
+Fix: Run `/brownfield:init`.
 
 ### "No git repos detected"
 
@@ -811,12 +812,12 @@ Fix: Brownfield will fall back to skeptical-reviewer automatically and warn you.
 ### "Plan targets an unconfigured repo"
 
 Cause: A repo referenced in the plan isn't in `config.index.repos`.
-Fix: Re-run `/brownfield:brownfield-init` with the "reconfigure" option to re-scan.
+Fix: Re-run `/brownfield:init` with the "reconfigure" option to re-scan.
 
 ### Multiple active workstreams
 
 Cause: You started multiple workstreams without finishing them.
-Fix: `/brownfield:brownfield-status` to see them all. Use `/brownfield:brownfield-execute <workstream-id>` to specify which one.
+Fix: `/brownfield:status` to see them all. Use `/brownfield:execute <workstream-id>` to specify which one.
 
 ### "PR fetch requires gh CLI"
 
@@ -826,7 +827,7 @@ Fix: `brew install gh && gh auth login`. Or use `--branch <name>` / `--commits <
 ### Plan looks generic / not specific to my codebase
 
 Cause: pattern-detector and code-explorer didn't have enough to work with.
-Fix: Make sure init detected your repos correctly — check `config.index.repos`. Add more detail to your feature description. Use `/brownfield:brownfield-research` first to do explicit research before planning.
+Fix: Make sure init detected your repos correctly — check `config.index.repos`. Add more detail to your feature description. Use `/brownfield:research` first to do explicit research before planning.
 
 ---
 
@@ -848,7 +849,7 @@ A: It's been tested on workspaces with 100+ repos. The init skill is designed to
 A: Brownfield never times out Codex. Let it run as long as it needs. This is by design — thorough review is more valuable than fast review.
 
 **Q: Can I edit a plan before approving it?**
-A: Yes. The plan is markdown in your repo. You can edit `.brownfield/workstreams/<id>/plan.md` directly, then re-present it via the brownfield-plan skill, or proceed to execute.
+A: Yes. The plan is markdown in your repo. You can edit `.brownfield/workstreams/<id>/plan.md` directly, then re-present it via the plan skill, or proceed to execute.
 
 **Q: Can I re-run a single agent without re-running the whole plan?**
 A: Not directly via slash commands, but agents are addressable by name from the Task tool. You can manually dispatch `brownfield:code-explorer` against an existing context if needed.

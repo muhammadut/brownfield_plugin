@@ -1,5 +1,5 @@
 ---
-name: brownfield-investigate
+name: investigate
 description: Senior FAANG engineer mode. Answer any question about the codebase, architecture, or technology by scaling depth to complexity. Asks clarifying questions for complex queries.
 user-invocable: true
 argument-hint: <any question about the codebase, architecture, or tech>
@@ -26,11 +26,15 @@ Every investigation produces a written report in `.brownfield/investigations/`. 
 ### Step 1: Read Configuration
 
 Read `.brownfield/config.json`. Store:
-- `paths.plugin_root` and `paths.knowledge_dir`
-- `index.repos` and `index.knowledge_sources`
+- `paths.plugin_root`
+- `workspace_type` (`single-repo` or `multi-repo`)
+- `index.repos` (with per-repo stack info: `language`, `framework`, `test_framework`, etc.)
+- `index.knowledge_sources`
 - `experts` array
 
-If config doesn't exist: "Brownfield isn't configured yet. Run /brownfield:brownfield-init first."
+**Note:** there is no top-level `stack` or `paths.knowledge_dir` field. Look up stack info per-repo in `index.repos`.
+
+If config doesn't exist: "Brownfield isn't configured yet. Run /brownfield:init first."
 
 ### Step 2: Triage the Question
 
@@ -72,7 +76,7 @@ When the user mentions a PR number (e.g., "look at PR #7337", "is PR #7337 ready
 4. Read the **actual changed files** from the local repo (or from a clone in your workspace if multi-repo)
 5. Investigate with context:
    - What does this PR actually do? (read description + files_changed)
-   - Is the code correct? (read the actual files in knowledge/repos/)
+   - Is the code correct? (read the actual files in the local repo(s))
    - Any risks? (cross-reference with other repos if relevant)
    - Review status — who approved, who hasn't, any blocking comments?
    - Should it merge? (your assessment based on code + context)
@@ -235,18 +239,18 @@ If the user wants to continue:
 > "Want to:
 > 1. Dig deeper into a specific finding
 > 2. Ask a follow-up question
-> 3. Convert this to a workstream (use /brownfield:brownfield-plan with the findings)
+> 3. Convert this to a workstream (use /brownfield:plan with the findings)
 > 4. Done"
 
 ## Output Directory
 
-All investigations are saved to `.brownfield/investigations/`. Over time, this becomes a team knowledge base. Encourage the user to commit this directory to git (unlike `.env` and `.brownfield/team.yaml`).
+All investigations are saved to `.brownfield/investigations/`. Over time, this becomes a team knowledge base. Encourage the user to commit this directory to git (unlike `.env` and other secret files).
 
 ## Examples
 
 **Simple:**
 ```
-User: /brownfield:investigate "where is ICarrierAdapter.IsHealthyAsync called?"
+User: /brownfield:investigate "where is UserRepository.findById called?"
 
 Response: No questions asked. Greps across indexed repos, returns all call sites
 with file:line references. Brief report written.
@@ -254,7 +258,7 @@ with file:line references. Brief report written.
 
 **Medium:**
 ```
-User: /brownfield:investigate "explain how authentication works in Brownfield.Customer.API"
+User: /brownfield:investigate "explain how authentication works in the api-service repo"
 
 Response: 1 question — "Focus on the auth flow end-to-end, or specific aspect
 (token validation, middleware, user lookup)?"
@@ -265,16 +269,16 @@ sequence diagram and file:line references.
 
 **Complex:**
 ```
-User: /brownfield:investigate "should we migrate from NLog to Serilog?"
+User: /brownfield:investigate "should we migrate from one structured logger to another?"
 
 Response: 3 questions —
   1. "What prompted this? (pain point, standardization push, new hire preference)"
-  2. "Scope: one repo, or all 108 repos?"
+  2. "Scope: one repo, or the whole workspace?"
   3. "Timeline constraints or risk tolerance?"
 
-Then: scans current NLog usage, researches Serilog vs NLog for .NET 8, checks which
-repos already use Serilog (maybe some do), identifies migration cost, proposes
-phased approach. Full report with recommendation.
+Then: scans current logging usage, researches alternatives for the relevant stack,
+checks which repos already use which logger (maybe some are mixed), identifies
+migration cost, proposes a phased approach. Full report with recommendation.
 ```
 
 ## Edge Cases
@@ -286,7 +290,7 @@ phased approach. Full report with recommendation.
 | Question outside codebase scope (e.g., "what's the weather") | Politely redirect to what this skill does |
 | User changes topic mid-investigation | Pivot or suggest a new investigation |
 | No repos indexed | Can still answer based on general knowledge, but note the limitation |
-| User asks for a code change | Redirect: "I investigate, I don't implement. Use /brownfield:brownfield-plan to plan changes." |
+| User asks for a code change | Redirect: "I investigate, I don't implement. Use /brownfield:plan to plan changes." |
 
 ## Important Notes
 
@@ -294,6 +298,6 @@ phased approach. Full report with recommendation.
 - **Cite evidence** — every claim should have a file:line reference or source URL
 - **Senior engineer mindset** — identify what the user didn't ask but should know
 - **Written reports always** — even simple queries get saved to `.brownfield/investigations/`
-- **No implementation** — this skill investigates only; use brownfield-plan for planning changes
-- **Cross-repo aware** — with 108 repos, context matters; trace connections
+- **No implementation** — this skill investigates only; use plan for planning changes
+- **Cross-repo aware** — in multi-repo workspaces, context matters; trace connections
 - **Skip clarifying questions for simple queries** — asking "why?" about "where is X?" is annoying

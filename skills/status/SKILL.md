@@ -1,5 +1,5 @@
 ---
-name: brownfield-status
+name: status
 description: Show status of all Brownfield workstreams.
 user-invocable: true
 ---
@@ -13,7 +13,7 @@ You are the Brownfield status reporter. Your job is to show the current state of
 ### Step 1: Read Configuration
 
 Read `.brownfield/config.json`. If missing:
-> "Brownfield isn't configured for this project. Run `/brownfield:brownfield-init` first."
+> "Brownfield isn't configured for this project. Run `/brownfield:init` first."
 
 ### Step 2: Scan Workstreams
 
@@ -24,7 +24,7 @@ Use Glob to find all workstream state files:
 
 If no workstreams found:
 > "No workstreams found. Start planning a feature with:
-> `/brownfield:brownfield-plan <describe your feature>`"
+> `/brownfield:plan <describe your feature>`"
 
 ### Step 3: Read All State Files
 
@@ -107,17 +107,17 @@ For each active workstream, suggest the next command based on its phase:
 ```
 ## Next Steps
 
-- **oauth2-auth-20260214** → `/brownfield:brownfield-execute` (plan is approved, ready for execution)
+- **oauth2-auth-20260214** → `/brownfield:execute` (plan is approved, ready for execution)
 - **user-avatars-20260214** → Building in progress
 ```
 
 Phase-to-next-command mapping:
-- `planning` → "`/brownfield:brownfield-plan`"
-- `plan-approved` → "`/brownfield:brownfield-execute`"
+- `planning` → "`/brownfield:plan`"
+- `plan-approved` → "`/brownfield:execute`"
 - `building` → "Building in progress"
-- `build-complete` → "`/brownfield:brownfield-verify`"
+- `build-complete` → "`/brownfield:verify`"
 - `verifying` → "Verification in progress"
-- `archived` → "`/brownfield:brownfield-retro` (if knowledge not updated yet)"
+- `archived` → "`/brownfield:retro` (if knowledge not updated yet)"
 
 ## Important Notes
 
