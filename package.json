@@ -1,0 +1,22 @@
+{
+  "name": "brownfield-plugin",
+  "version": "1.0.0",
+  "description": "Production-grade brownfield development workflow for Claude Code: research, plan, execute, verify, learn. Multi-repo support with Codex adversarial review. Use on existing codebases.",
+  "keywords": [
+    "claude-code-plugin",
+    "brownfield",
+    "workflow",
+    "codex",
+    "review",
+    "planning",
+    "multi-repo",
+    "research"
+  ],
+  "license": "MIT",
+  "files": [
+    ".claude-plugin/",
+    "skills/",
+    "agents/",
+    "docs/"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "brownfield-plugin",
+  "owner": {
+    "name": "muhammadut"
+  },
+  "metadata": {
+    "description": "Production-grade brownfield development workflow with research, adversarial review, and cross-workstream learning. For existing codebases."
+  },
+  "plugins": [
+    {
+      "name": "brownfield",
+      "source": {
+        "source": "github",
+        "repo": "muhammadut/brownfield_plugin"
+      },
+      "description": "Brownfield workflow for Claude Code: research-backed planning, parallel execution, adversarial review (Codex/Claude), persistent lessons learned. Multi-repo support. Pair with the greenfield plugin for the planning phase of new projects.",
+      "version": "1.0.0",
+      "license": "MIT",
+      "keywords": [
+        "brownfield",
+        "workflow",
+        "codex",
+        "review",
+        "planning",
+        "multi-repo",
+        "research",
+        "learning",
+        "adversarial-review"
+      ]
+    }
+  ]
+}
