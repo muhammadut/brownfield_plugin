@@ -14,7 +14,7 @@
         "repo": "muhammadut/brownfield_plugin"
       },
       "description": "Brownfield workflow for Claude Code: research-backed planning, parallel execution, adversarial review (Codex/Claude), persistent lessons learned. Multi-repo support. Pair with the greenfield plugin for the planning phase of new projects.",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "license": "MIT",
       "keywords": [
         "brownfield",
