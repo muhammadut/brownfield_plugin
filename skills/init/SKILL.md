@@ -16,6 +16,17 @@ You are the Brownfield initialization orchestrator. Your job is to:
 
 The expected flow is: user opens Claude Code in their working directory, runs `/brownfield:init`, and Brownfield indexes whatever is already there.
 
+## Step 0 (MANDATORY): Resolve project root
+
+**Before any file read, file write, or directory creation, pin the project root to the user's current working directory.** This makes the plugin CWD-agnostic and shippable — `.brownfield/` must land wherever the user invoked `/brownfield:init`, never in the plugin install directory, never in a hardcoded path.
+
+1. Run `pwd` via `Bash` and capture the output as `PROJECT_ROOT` (remember it for the rest of this session).
+2. Every `.brownfield/...` path referenced below is shorthand for `$PROJECT_ROOT/.brownfield/...`. When you call:
+   - `Bash mkdir -p` → use `"$PROJECT_ROOT/.brownfield/..."` (quoted, absolute).
+   - `Write` → pass the absolute path `<PROJECT_ROOT>/.brownfield/config.json`, NEVER a bare relative path (the `Write` tool rejects relatives).
+   - `Read` / `Glob` → scope to `$PROJECT_ROOT` when indexing repos.
+3. If `pwd` returns the plugin marketplace directory (contains `marketplaces/brownfield-plugin` in the path) or the user's home directory with no project context, STOP and ask: "I'm about to initialize Brownfield in `<path>` — is that the workspace you want? If not, `cd` into your workspace and re-run `/brownfield:init`." Do not proceed without confirmation.
+
 > **Note:** Brownfield is for **existing codebases**. If you're starting from an empty directory and need to plan + scaffold a new project from scratch, use the `greenfield` plugin instead.
 
 Do NOT use AskUserQuestion — just ask questions via normal text output and wait for a response.
@@ -205,7 +216,14 @@ Always set `review.fallback = "skeptical-reviewer"`.
 
 ### Step 6: Create Directory Structure
 
-Create:
+Create under `$PROJECT_ROOT` (captured in Step 0) — always absolute, always quoted:
+
+```bash
+mkdir -p "$PROJECT_ROOT/.brownfield/workstreams" \
+         "$PROJECT_ROOT/.brownfield/learning" \
+         "$PROJECT_ROOT/.brownfield/investigations" \
+         "$PROJECT_ROOT/.brownfield/reviews"
+```
 
 ```
 .brownfield/
